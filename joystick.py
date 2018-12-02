@@ -13,21 +13,23 @@ _HNDL_ROLL      =   0 #values 0 (left) to 1023 (right), 512 middle
 _HDNL_YAW       =   5 #values 0 (left) to 255 (right), 128 middle
 
 exit_flag       =   0
+_DEBUG          =   False
 
 class Joystick (threading.Thread):
-    def __init__(self, threadID, name, counter):
+    def __init__(self, threadID, name):
 
         threading.Thread.__init__(self)
         
-        self.threadID = threadID
-        self.name = name
-        self.counter = counter
+        self.threadID       =   threadID
+        self.name           =   name
+        # self.counter        =   counter
 
-        self.dev = None
+        self.dev            =   None
+
         # Set your controller name here
-        self.device_name = "Thrustmaster T.Flight Hotas X"
+        self.device_name    =   "Thrustmaster T.Flight Hotas X"
 
-        self.event_codes = {
+        self.event_codes    =   {
             288         :   "_BTN_TRIGGER",#    :   288,
             298         :   "_BTN_SE",#         :   298,
             299         :   "_BTN_ST",#         :   299,
@@ -39,7 +41,7 @@ class Joystick (threading.Thread):
             5           :   "_HDNL_YAW"#       :   5, #values 0 (left) to 255 (right), 128 middle
         }
 
-        self.event_values = {
+        self.event_values   =   {
             "_BTN_TRIGGER"    :   0,
             "_BTN_SE"         :   0,
             "_BTN_ST"         :   0,
@@ -73,6 +75,9 @@ class Joystick (threading.Thread):
     
     def th_reader(self):
         for ev in self.dev.read_loop():
+            if _DEBUG:
+                # print(repr(ev))
+                pass
             if exit_flag:
                 self.name.exit()
             self.parse_event(ev)
@@ -83,15 +88,16 @@ class Joystick (threading.Thread):
         #     # self.event_values[ev.code]
         #     print (ev.value)
 
-        # Not sure why but ev.code 0 is always present, even though it is used for roll
-        # roll will never (really) be zero so can clean it out like that
-        if (ev.code == 0 and ev.value == 0):
+        # ev.code = 0 is roll but the type needs to be 3
+        # otherwise a ghost event with ev.code = 0 and ev.type = 0 always occurs
+        if (ev.code == 0 and ev.type != 3):
             return
 
         code = self.event_codes.get(ev.code)
         if code:
             self.event_values[code] = ev.value
-            print(code + ":" + str(ev.value))
+            if(_DEBUG):
+                print(code + ":" + str(ev.value))
 
     def get_event_values(self):
         return self.event_values
@@ -108,7 +114,7 @@ class Joystick (threading.Thread):
 
 if __name__ == "__main__":
 
-    js = Joystick(1, "Thread - Joystick", 1)
+    js = Joystick(1, "Thread - Joystick")
     js.start()
     js.join()
 
