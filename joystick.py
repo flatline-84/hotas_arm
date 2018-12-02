@@ -1,5 +1,6 @@
 import asyncio
 import evdev
+import threading
 
 _BTN_TRIGGER    =   288
 _BTN_SE         =   298
@@ -11,8 +12,17 @@ _HNDL_PITCH     =   1 #values 0 (forward) to 1023 (backwards), 512 middle
 _HNDL_ROLL      =   0 #values 0 (left) to 1023 (right), 512 middle
 _HDNL_YAW       =   5 #values 0 (left) to 255 (right), 128 middle
 
-class Joystick:
-    def __init__(self):
+exit_flag       =   0
+
+class Joystick (threading.Thread):
+    def __init__(self, threadID, name, counter):
+
+        threading.Thread.__init__(self)
+        
+        self.threadID = threadID
+        self.name = name
+        self.counter = counter
+
         self.dev = None
         # Set your controller name here
         self.device_name = "Thrustmaster T.Flight Hotas X"
@@ -41,17 +51,30 @@ class Joystick:
             "_HDNL_YAW"       :   0, #values 0 (left) to 255 (right), 128 middle
         }
 
-    def start(self):
+        self.set_device()
+
+    def set_device(self):
         if not self.find_device(self.get_current_devices()):
             print("Cannot find device!")
             exit(1)
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.reader(self.dev))
+        # loop = asyncio.get_event_loop()
+        # loop.run_until_complete(self.reader(self.dev))
+    
+    def run(self):
+        print("Starting: " + self.name)
+        self.th_reader()
+        print("Exiting: " + self.name)
 
-    async def reader(self, dev):
-        async for ev in dev.async_read_loop():
+    async def reader(self):
+        async for ev in self.dev.async_read_loop():
             # print(repr(ev))
+            self.parse_event(ev)
+    
+    def th_reader(self):
+        for ev in self.dev.read_loop():
+            if exit_flag:
+                self.name.exit()
             self.parse_event(ev)
 
     def parse_event(self, ev):
@@ -61,14 +84,17 @@ class Joystick:
         #     print (ev.value)
 
         # Not sure why but ev.code 0 is always present, even though it is used for roll
-        # roll will never be zero so can clean it out like that
+        # roll will never (really) be zero so can clean it out like that
         if (ev.code == 0 and ev.value == 0):
             return
 
         code = self.event_codes.get(ev.code)
         if code:
-            print(code)
+            self.event_values[code] = ev.value
+            print(code + ":" + str(ev.value))
 
+    def get_event_values(self):
+        return self.event_values
 
     def get_current_devices(self):
         return [evdev.InputDevice(path) for path in evdev.list_devices()]
@@ -82,5 +108,8 @@ class Joystick:
 
 if __name__ == "__main__":
 
-    js = Joystick()
+    js = Joystick(1, "Thread - Joystick", 1)
     js.start()
+    js.join()
+
+    print("Exiting Main Thread")
