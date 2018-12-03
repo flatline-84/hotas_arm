@@ -12,17 +12,19 @@ _HNDL_PITCH     =   1 #values 0 (forward) to 1023 (backwards), 512 middle
 _HNDL_ROLL      =   0 #values 0 (left) to 1023 (right), 512 middle
 _HDNL_YAW       =   5 #values 0 (left) to 255 (right), 128 middle
 
-exit_flag       =   0
+# exit_flag       =   0
 _DEBUG          =   False
 
 class Joystick (threading.Thread):
-    def __init__(self, threadID, name):
+    def __init__(self, threadID, name, lock):
 
         threading.Thread.__init__(self)
+        self._stop_event = threading.Event()
         
         self.threadID       =   threadID
         self.name           =   name
         # self.counter        =   counter
+        self.lock           =   lock
 
         self.dev            =   None
 
@@ -55,6 +57,12 @@ class Joystick (threading.Thread):
 
         self.set_device()
 
+    def stop(self):
+        self._stop_event.set()
+
+    def stopped(self):
+        return self._stop_event.is_set()
+
     def set_device(self):
         if not self.find_device(self.get_current_devices()):
             print("Cannot find device!")
@@ -74,12 +82,19 @@ class Joystick (threading.Thread):
             self.parse_event(ev)
     
     def th_reader(self):
+        
+        #Catching if no events fired and program ends **DOESN'T WORK**
+        if self.stopped():
+            return
+        
+        # This loop is annoying af. Let me pull the events one by one
         for ev in self.dev.read_loop():
             if _DEBUG:
                 # print(repr(ev))
                 pass
-            if exit_flag:
-                self.name.exit()
+            # To fully quit, press button on controller
+            if self.stopped():
+                return
             self.parse_event(ev)
 
     def parse_event(self, ev):
@@ -95,12 +110,16 @@ class Joystick (threading.Thread):
 
         code = self.event_codes.get(ev.code)
         if code:
-            self.event_values[code] = ev.value
-            if(_DEBUG):
-                print(code + ":" + str(ev.value))
+            # Lock self.event_values so that they can be updated
+            # Will automatically acquire and release thanks to 'with'
+            with self.lock:
+                self.event_values[code] = ev.value
+                if(_DEBUG):
+                    print(code + ":" + str(ev.value))
 
     def get_event_values(self):
-        return self.event_values
+        with self.lock:
+            return self.event_values
 
     def get_current_devices(self):
         return [evdev.InputDevice(path) for path in evdev.list_devices()]
@@ -114,8 +133,9 @@ class Joystick (threading.Thread):
 
 if __name__ == "__main__":
 
-    js = Joystick(1, "Thread - Joystick")
+    js_lock = threading.Lock()
+    js = Joystick(1, "Thread - Joystick", js_lock)
     js.start()
     js.join()
 
-    print("Exiting Main Thread")
+    print("Exiting Joystick Main Thread")
